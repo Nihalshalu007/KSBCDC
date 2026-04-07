@@ -2782,12 +2782,10 @@
   function todayKey(){ return dateKey(Date.now()); }
   function isDateToday(k){ return k===todayKey(); }
 
-  // Get all daily counts from verified loans (counts each individual loan number)
-  // Only counts loans from today onwards — old test/pre-audit data is ignored
+  // Get all daily counts from verified loans (uses grouped allLoans to avoid CDS double-counting)
   function getDailyCounts(){
     const counts={};
-    const startK=todayKey();
-    Object.values(latestVerified).forEach(l=>{ if(l.timestamp){ const k=dateKey(l.timestamp); if(k>=startK){ counts[k]=(counts[k]||0)+1; } } });
+    allLoans.filter(l=>l._status==='verified').forEach(l=>{ if(l.timestamp){ const k=dateKey(l.timestamp); counts[k]=(counts[k]||0)+1; } });
     return counts;
   }
 
@@ -2809,12 +2807,11 @@
   }
 
   function updateStats(){
+    const v=allLoans.filter(l=>l._status==='verified');
     const o=allLoans.filter(l=>l._status==='ongoing');
-    const startK=todayKey();
-    // Only count verified loans from today onwards
-    const verifiedFromToday=Object.values(latestVerified).filter(l=>l.timestamp&&dateKey(l.timestamp)>=startK);
-    const totalVerifiedCount=verifiedFromToday.length;
-    const todayCount=verifiedFromToday.filter(l=>isToday(l.timestamp)).length;
+    // Use grouped allLoans for accurate counts (avoids double-counting CDS linked loans)
+    const totalVerifiedCount=v.length;
+    const todayCount=v.filter(l=>isToday(l.timestamp)).length;
     const counts=getDailyCounts();
     const lastWorking=getLastWorkingDayCount(counts, todayKey());
 
@@ -2868,21 +2865,21 @@
     const container=document.getElementById('dhContent');
     if(!container) return;
 
+    // Determine date range: from earliest record to today
     const today=new Date(); today.setHours(23,59,59,999);
-    const todayK=todayKey();
-    // Only show days from today onwards — ignore all pre-audit history
-    const allKeys=Object.keys(counts).filter(k=>k>=todayK).sort();
+    const allKeys=Object.keys(counts).sort();
     if(!allKeys.length){ container.innerHTML='<div class="dh-empty">📋 No verified records yet.</div>'; document.getElementById('dhMeta').textContent=''; document.getElementById('dhFooterStats').textContent=''; document.getElementById('dhShowMore').style.display='none'; return; }
 
-    const earliest=new Date(todayK); earliest.setHours(0,0,0,0);
+    const earliest=new Date(allKeys[0]); earliest.setHours(0,0,0,0);
+    const todayK=todayKey();
 
-    // Build array of days from today onwards
+    // Build array of all days from earliest to today
     const days=[];
     const cur=new Date(earliest);
     while(cur<=today){
       const k=dateKey(cur.getTime());
       const count=counts[k]||0;
-      const isHoliday=count===0&&k!==todayK;
+      const isHoliday=count===0&&k!==todayK; // 0-count past days = holiday; today with 0 is not yet a holiday
       days.push({key:k,count,isHoliday,isToday:k===todayK,date:new Date(cur)});
       cur.setDate(cur.getDate()+1);
     }
